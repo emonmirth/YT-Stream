@@ -1,0 +1,61 @@
+CREATE TABLE `broadcast_rights` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`rightsholder` varchar(100) NOT NULL,
+	`country` varchar(100) NOT NULL,
+	`websiteUrl` varchar(255),
+	`youtubeChannelUrl` varchar(255),
+	`youtubeChannelId` varchar(100),
+	`startDate` datetime,
+	`endDate` datetime,
+	`description` text,
+	`attributionText` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `broadcast_rights_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `stream_quality_variants` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`matchId` int NOT NULL,
+	`quality` enum('360p','480p','720p','1080p','2160p') NOT NULL,
+	`bitrate` int,
+	`resolution` varchar(20),
+	`codec` varchar(50),
+	`hlsPlaylistUrl` text,
+	`dashPlaylistUrl` text,
+	`isAvailable` int DEFAULT 1,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `stream_quality_variants_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `world_cup_matches` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`matchId` varchar(64) NOT NULL,
+	`team1` varchar(100) NOT NULL,
+	`team2` varchar(100) NOT NULL,
+	`stage` enum('group_stage','round_of_16','quarterfinals','semifinals','third_place','final') NOT NULL,
+	`group` varchar(10),
+	`scheduledTime` datetime NOT NULL,
+	`timezoneBRT` varchar(50) NOT NULL,
+	`stadium` varchar(150),
+	`city` varchar(100),
+	`country` varchar(100),
+	`broadcaster` varchar(100) DEFAULT 'CazeTV',
+	`youtubeChannelId` varchar(100),
+	`youtubeVideoId` varchar(100),
+	`hlsManifestUrl` text,
+	`dashManifestUrl` text,
+	`status` enum('scheduled','live','completed','postponed','cancelled') NOT NULL DEFAULT 'scheduled',
+	`team1Goals` int,
+	`team2Goals` int,
+	`team1PenaltyGoals` int,
+	`team2PenaltyGoals` int,
+	`description` text,
+	`notes` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	`lastStatusUpdate` timestamp DEFAULT (now()),
+	CONSTRAINT `world_cup_matches_id` PRIMARY KEY(`id`),
+	CONSTRAINT `world_cup_matches_matchId_unique` UNIQUE(`matchId`)
+);

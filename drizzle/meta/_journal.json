@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1781279705727,
+      "tag": "0000_purple_manta",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1781280311743,
+      "tag": "0001_whole_sunspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1781281779173,
+      "tag": "0002_luxuriant_vindicator",
+      "breakpoints": true
+    }
+  ]
+}
