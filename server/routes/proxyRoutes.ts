@@ -284,4 +284,93 @@ router.get("/segment", async (req, res) => {
   }
 });
 
+/**
+ * Route: GET /api/proxy/stream-url?videoId=...
+ * Serves the rewritten HLS manifest directly to the frontend.
+ */
+router.get("/stream-url", async (req, res) => {
+  const { videoId } = req.query;
+  if (!videoId || typeof videoId !== "string") {
+    return res.status(400).send("videoId parameter is required");
+  }
+
+  try {
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    console.log(`[Proxy] stream-url fetching YouTube watch page for ID: ${videoId}...`);
+    
+    const response = await fetchWithRetry(watchUrl, {
+      headers: {
+        "Origin": "https://www.youtube.com",
+        "Referer": "https://www.youtube.com/",
+      }
+    });
+
+    const html = response.data;
+    if (typeof html !== "string") {
+      throw new Error("Invalid response format received from YouTube watch page");
+    }
+
+    let streamUrl: string | null = null;
+
+    // Attempt 1: Fast regex for direct HLS manifest URL matching
+    const hlsMatch = html.match(/"hlsManifestUrl"\s*:\s*"([^"]+)"/);
+    if (hlsMatch) {
+      streamUrl = hlsMatch[1].replace(/\\/g, "");
+    }
+
+    // Attempt 2: Parse ytInitialPlayerResponse
+    if (!streamUrl) {
+      const playerResponseMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+      if (playerResponseMatch) {
+        try {
+          const playerResponse = JSON.parse(playerResponseMatch[1]);
+          streamUrl = playerResponse.streamingData?.hlsManifestUrl || null;
+        } catch (err) {
+          console.error("[Proxy] Failed to parse ytInitialPlayerResponse JSON:", err);
+        }
+      }
+    }
+
+    // Attempt 3: Alternative regex for script ending
+    if (!streamUrl) {
+      const playerResponseMatch2 = html.match(/ytInitialPlayerResponse\s*=\s*({.+?})\s*<\/script>/);
+      if (playerResponseMatch2) {
+        try {
+          const playerResponse = JSON.parse(playerResponseMatch2[1]);
+          streamUrl = playerResponse.streamingData?.hlsManifestUrl || null;
+        } catch (err) {
+          console.error("[Proxy] Failed to parse alternative ytInitialPlayerResponse JSON:", err);
+        }
+      }
+    }
+
+    if (!streamUrl) {
+      throw new Error("HLS stream URL not found on the YouTube watch page");
+    }
+
+    // Fetch the actual manifest content and rewrite it
+    console.log(`[Proxy] stream-url fetching manifest: ${streamUrl.slice(0, 80)}...`);
+    const manifestResponse = await fetchWithRetry(streamUrl, {
+      responseType: "text",
+      headers: {
+        "Origin": "https://www.youtube.com",
+        "Referer": "https://www.youtube.com/",
+      }
+    });
+
+    const rewrittenContent = rewriteManifest(manifestResponse.data, streamUrl);
+
+    res.setHeader("Content-Type", manifestResponse.headers["content-type"] || "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    return res.status(200).send(rewrittenContent);
+
+  } catch (error: any) {
+    console.error(`[Proxy] Error in /stream-url:`, error.message);
+    const fallbackManifest = `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-ENDLIST\n`;
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    return res.status(200).send(fallbackManifest);
+  }
+});
+
 export default router;

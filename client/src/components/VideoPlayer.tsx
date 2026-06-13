@@ -79,37 +79,17 @@ export default function VideoPlayer({
         setIsLoading(true);
         setError(null);
 
-        let streamUrl = manifestUrl;
+        let proxiedManifestUrl = "";
 
-        // If we have a YouTube video ID, fetch the stream through our proxy
-        if (videoId && !manifestUrl) {
-          try {
-            const response = await fetch(`/api/proxy/stream?videoId=${videoId}`);
-            if (!response.ok) {
-              throw new Error("Failed to fetch stream from proxy");
-            }
-            const data = await response.json();
-            if (data.success && data.manifestUrl) {
-              streamUrl = data.manifestUrl;
-            } else {
-              throw new Error(data.error || "Failed to extract manifest URL from proxy");
-            }
-          } catch (err) {
-            console.error("Failed to fetch YouTube stream:", err);
-            setError(err instanceof Error ? err.message : "Failed to fetch YouTube stream");
-            setIsLoading(false);
-            return;
-          }
-        }
-
-        if (!streamUrl) {
-          setError("No stream URL provided");
+        if (videoId) {
+          proxiedManifestUrl = `/api/proxy/stream-url?videoId=${videoId}`;
+        } else if (manifestUrl) {
+          proxiedManifestUrl = `/api/proxy/manifest?url=${encodeURIComponent(manifestUrl)}`;
+        } else {
+          setError("No stream URL or video ID provided");
           setIsLoading(false);
           return;
         }
-
-        // Route manifest through proxy
-        const proxiedManifestUrl = `/api/proxy/manifest?url=${encodeURIComponent(streamUrl)}`;
 
         // Initialize HLS.js
         if (HLS.isSupported()) {
