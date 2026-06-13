@@ -249,8 +249,7 @@ export default function VideoPlayer({
   return (
     <div
       ref={containerRef}
-      className="w-full bg-black rounded-lg overflow-hidden group"
-      style={{ aspectRatio: "16 / 9" }}
+      className="relative w-full aspect-video bg-black rounded-lg overflow-hidden group"
     >
       {/* Video Element */}
       <video
@@ -285,6 +284,7 @@ export default function VideoPlayer({
         {/* Progress Bar */}
         <div className="mb-4">
           <input
+            aria-label="Seek video"
             type="range"
             min="0"
             max={duration || 0}
@@ -328,6 +328,7 @@ export default function VideoPlayer({
                 )}
               </button>
               <input
+                aria-label="Volume"
                 type="range"
                 min="0"
                 max="100"
@@ -340,6 +341,7 @@ export default function VideoPlayer({
             {/* Quality Selector */}
             {availableQualities.length > 1 && (
               <select
+                aria-label="Video quality"
                 value={selectedQuality}
                 onChange={(e) => handleQualityChange(e.target.value)}
                 className="px-2 py-1 bg-black/50 text-white text-xs rounded border border-gray-600 hover:border-accent transition-colors"

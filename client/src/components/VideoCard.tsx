@@ -11,9 +11,10 @@ interface VideoCardProps {
     onClick?: () => void;
 }
 
-export default function VideoCard({ title, thumbnail, duration, views, publishedAt, isLive, onClick }: VideoCardProps) {
+export default function VideoCard({ id, title, thumbnail, duration, views, publishedAt, isLive, onClick }: VideoCardProps) {
+    // The 'group' class must be applied here in JSX, not via @apply in CSS
     return (
-        <div className="video-card" onClick={onClick}>
+        <div className="video-card group" onClick={onClick}>
             <div className="video-card-thumb">
                 <img src={thumbnail} alt={title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                 {duration && !isLive && <span className="video-card-duration">{duration}</span>}
@@ -25,7 +26,7 @@ export default function VideoCard({ title, thumbnail, duration, views, published
                         </div>
                     </div>
                 )}
-                <div className="video-card-overlay">
+                <div className="video-card-overlay group-hover:opacity-100">
                     <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center text-white">
                         <Play className="w-6 h-6 fill-current" />
                     </div>
