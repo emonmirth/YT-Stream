@@ -30,6 +30,18 @@ async function fetchLiveIdFromApi(apiKey: string, channelId: string): Promise<st
   return null;
 }
 
+export async function refreshCazeTvLiveVideoId(): Promise<string | null> {
+  const apiKey = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    console.warn("[Poller] YouTube API key missing; cannot resolve live video ID");
+    currentLiveVideoId = null;
+    return null;
+  }
+
+  currentLiveVideoId = await fetchLiveIdFromApi(apiKey, CAZETV_CHANNEL_ID);
+  return currentLiveVideoId;
+}
+
 /**
  * Fetch Channel Metadata (Stats & Snippet) via YouTube Data API v3
  */
@@ -58,42 +70,66 @@ export async function fetchChannelMetadata(apiKey: string, channelId: string = C
 /**
  * Fetch Channel Content (Videos, Shorts, Playlists) via YouTube Data API v3
  */
-export async function fetchChannelContent(apiKey: string, type: string, channelId: string = CAZETV_CHANNEL_ID) {
+export async function fetchChannelContent(
+  apiKey: string,
+  type: string,
+  channelId: string = CAZETV_CHANNEL_ID,
+  pageToken?: string
+) {
   try {
     let url = "";
+    const tokenParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "";
+
     // For standard videos, use the uploads playlist to save quota (1 unit vs 100 for search)
     if (type === "videos") {
       const meta = await fetchChannelMetadata(apiKey, channelId);
       if (!meta?.uploadsPlaylistId) throw new Error("No uploads playlist found");
-      url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${meta.uploadsPlaylistId}&maxResults=20&key=${apiKey}`;
+      url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${meta.uploadsPlaylistId}&maxResults=24${tokenParam}&key=${apiKey}`;
     } else if (type === "live") {
-      url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&type=video&eventType=completed&order=date&maxResults=20&key=${apiKey}`;
+      url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&type=video&eventType=completed&order=date&maxResults=24${tokenParam}&key=${apiKey}`;
     } else if (type === "shorts") {
-      url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&type=video&videoDuration=short&maxResults=20&key=${apiKey}`;
+      url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&type=video&videoDuration=short&order=date&maxResults=24${tokenParam}&key=${apiKey}`;
     } else if (type === "playlists") {
-      url = `https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&channelId=${channelId}&maxResults=10&key=${apiKey}`;
+      url = `https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&channelId=${channelId}&maxResults=24${tokenParam}&key=${apiKey}`;
     }
 
-    if (!url) return [];
+    if (!url) return { items: [], nextPageToken: null };
 
     const res = await axios.get(url, { timeout: 10000 });
     const items = res.data?.items || [];
 
-    return items.map((item: any) => {
+    const mappedItems = items.map((item: any) => {
       const snippet = item.snippet;
       const videoId = type === "videos" ? item.contentDetails?.videoId : (item.id?.videoId || item.id);
+
+      if (type === "playlists") {
+        return {
+          id: item.id,
+          title: snippet.title,
+          thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url,
+          videoCount: String(item.contentDetails?.itemCount || 0),
+          description: snippet.description || "",
+        };
+      }
+
       return {
         id: videoId,
         title: snippet.title,
-        thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url,
+        thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url,
         duration: "", // Optional: requires extra API call to 'videos' endpoint
-        views: "Authentic View Count",
-        publishedAt: formatRelativeDate(snippet.publishedAt)
+        views: type === "live" ? "Stream archive" : "YouTube",
+        publishedAt: formatRelativeDate(snippet.publishedAt),
+        isLive: false,
       };
-    });
+    }).filter((item: any) => Boolean(item.id));
+
+    return {
+      items: mappedItems,
+      nextPageToken: res.data?.nextPageToken || null,
+    };
   } catch (err: any) {
     console.error(`[YouTube API] Failed to fetch channel ${type}: ${err.message}`);
-    return [];
+    return { items: [], nextPageToken: null };
   }
 }
 
@@ -129,17 +165,11 @@ function formatRelativeDate(dateStr: string): string {
  * Runs the polling task
  */
 export async function pollCazeTvLive() {
-  const apiKey = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY;
+  const previousLiveVideoId = currentLiveVideoId;
+  const liveId = await refreshCazeTvLiveVideoId();
 
-  let liveId: string | null = null;
-
-  if (apiKey) {
-    liveId = await fetchLiveIdFromApi(apiKey, CAZETV_CHANNEL_ID);
-  }
-
-  if (liveId !== currentLiveVideoId) {
-    console.log(`[Poller] State Change: Live Video ID transitioned from [${currentLiveVideoId}] to [${liveId}]`);
-    currentLiveVideoId = liveId;
+  if (liveId !== previousLiveVideoId) {
+    console.log(`[Poller] State Change: Live Video ID transitioned from [${previousLiveVideoId}] to [${liveId}]`);
 
     // Update database for all matches that are currently marked "live"
     try {

@@ -1,20 +1,24 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import Navigation from "@/components/Navigation";
 import ChannelTabNav from "@/components/ChannelTabNav";
 import VideoCard from "@/components/VideoCard";
 import { Loader2, PlayCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 
 export default function Channel() {
     const [activeTab, setActiveTab] = useState("videos");
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [nextPageTokens, setNextPageTokens] = useState<Record<string, string | null>>({});
     const [channelInfo, setChannelInfo] = useState<{
         title: string;
         customUrl: string;
         thumbnail: string;
         subscriberCount: string;
         videoCount: string;
+        uploadsPlaylistId?: string; // Add uploadsPlaylistId to channelInfo
     } | null>(null);
     const [, setLocation] = useLocation();
 
@@ -38,29 +42,55 @@ export default function Channel() {
         fetchChannelInfo();
     }, []);
 
-    useEffect(() => {
-        const fetchTabContent = async () => {
+    const fetchTabContent = useCallback(async (tabId: string, loadMore = false, pageToken?: string | null) => {
+        if (loadMore) {
+            setLoadingMore(true);
+        } else {
             setLoading(true);
-            try {
-                const response = await fetch(`/api/channel/${activeTab}`);
-                const json = await response.json();
-                setItems(json.data || []);
-            } catch (error) {
-                console.error("Failed to fetch channel items:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
+            setItems([]);
+        }
 
-        fetchTabContent();
-    }, [activeTab]);
+        try {
+            const params = loadMore && pageToken ? `?pageToken=${encodeURIComponent(pageToken)}` : "";
+            const response = await fetch(`/api/channel/${tabId}${params}`);
+            const json = await response.json();
+
+            if (json.success) {
+                setItems((prevItems) => loadMore ? [...prevItems, ...(json.data || [])] : json.data || []);
+                setNextPageTokens((prev) => ({ ...prev, [tabId]: json.nextPageToken || null }));
+            } else {
+                if (!loadMore) setItems([]);
+                setNextPageTokens((prev) => ({ ...prev, [tabId]: null }));
+            }
+        } catch (error) {
+            console.error("Failed to fetch channel items:", error);
+            if (!loadMore) setItems([]);
+            setNextPageTokens((prev) => ({ ...prev, [tabId]: null }));
+        } finally {
+            setLoading(false);
+            setLoadingMore(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchTabContent(activeTab);
+    }, [activeTab, fetchTabContent]);
+
+    const handleLoadMore = () => {
+        fetchTabContent(activeTab, true, nextPageTokens[activeTab]);
+    };
 
     const handleWatchLive = () => {
         setLocation("/live");
     };
 
-    const handleVideoClick = (videoId: string) => {
-        setLocation(`/live?matchId=${videoId}`);
+    const handleItemClick = (itemId: string) => {
+        if (activeTab === "playlists") {
+            window.open(`https://www.youtube.com/playlist?list=${encodeURIComponent(itemId)}`, "_blank", "noopener,noreferrer");
+            return;
+        }
+
+        setLocation(`/live?videoId=${itemId}`);
     };
 
     return (
@@ -84,10 +114,10 @@ export default function Channel() {
                                 <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">{channelInfo?.title || "CazéTV"}</h1>
                                 <div className="flex items-center gap-3 text-sm text-muted-foreground mb-4">
                                     <span>{channelInfo?.customUrl || "@CazeTV"}</span>
-                                    <span>•</span>
-                                    <span>{channelInfo?.subscriberCount || "29M+"} subscribers</span>
-                                    <span>•</span>
-                                    <span>{channelInfo?.videoCount || "4.2K"} videos</span>
+                                    {channelInfo?.subscriberCount && <span>•</span>}
+                                    {channelInfo?.subscriberCount && <span>{channelInfo.subscriberCount} subscribers</span>}
+                                    {channelInfo?.videoCount && <span>•</span>}
+                                    {channelInfo?.videoCount && <span>{channelInfo.videoCount} videos</span>}
                                 </div>
                                 <button
                                     onClick={handleWatchLive}
@@ -121,10 +151,23 @@ export default function Channel() {
                         {items.map((item) => (
                             <VideoCard
                                 key={item.id}
-                                {...item}
-                                onClick={() => handleVideoClick(item.id)}
+                                id={item.id}
+                                title={item.title}
+                                thumbnail={item.thumbnail}
+                                duration={item.duration || (item.videoCount ? `${item.videoCount} videos` : "")}
+                                views={item.views || ""}
+                                publishedAt={item.publishedAt || ""}
+                                isLive={item.isLive}
+                                onClick={() => handleItemClick(item.id)}
                             />
                         ))}
+                    </div>
+                )}
+                {nextPageTokens[activeTab] && !loading && (
+                    <div className="flex justify-center mt-10">
+                        <Button onClick={handleLoadMore} disabled={loadingMore} className="btn-premium">
+                            {loadingMore ? "Loading..." : "Load More"}
+                        </Button>
                     </div>
                 )}
             </div>

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import axios from "axios";
-import { getCachedLiveVideoId } from "../services/cazeTvPoller";
+import { getCachedLiveVideoId, refreshCazeTvLiveVideoId } from "../services/cazeTvPoller";
 import { getProxyAgents } from "../services/proxyService";
 
 const router = Router();
@@ -119,6 +119,42 @@ router.get("/live-id", (req, res) => {
     status: liveId ? "online" : "offline",
     timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * Route: GET /api/proxy/live-source
+ * Resolves the current CazeTV live video on demand, then lets the frontend load
+ * the proxied M3U8 through /api/proxy/stream-url?videoId=...
+ */
+router.get("/live-source", async (_req, res) => {
+  try {
+    const liveId = await refreshCazeTvLiveVideoId() || getCachedLiveVideoId();
+
+    if (!liveId) {
+      return res.json({
+        success: false,
+        liveId: null,
+        status: "offline",
+        message: "No active CazeTV live broadcast was found.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      liveId,
+      status: "online",
+      streamUrl: `/api/proxy/stream-url?videoId=${encodeURIComponent(liveId)}`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("[Proxy] Error resolving live source:", error.message);
+    return res.status(200).json({
+      success: false,
+      liveId: null,
+      status: "error",
+      message: error.message || "Failed to resolve live source",
+    });
+  }
 });
 
 /**
