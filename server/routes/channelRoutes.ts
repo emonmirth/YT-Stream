@@ -1,211 +1,361 @@
 import { Router } from "express";
 import axios from "axios";
-import { getProxyAgents } from "../services/proxyService";
-import { buildHumanHeaders } from "./proxyRoutes";
 
 const router = Router();
 
-const CAZETV_CHANNEL_ID = "UCy1Ms2KSGF3eDYYo7dOBkJg";
-const CAZETV_BASE = "https://www.youtube.com/@CazeTV";
-
-// ─── Shared fetch helper ─────────────────────────────────────────────────────
-
-async function fetchChannelPage(path: string): Promise<string> {
-  const { httpsAgent, httpAgent } = await getProxyAgents();
-  const url = `${CAZETV_BASE}${path}`;
-  console.log(`[Channel] Fetching: ${url}`);
-  const res = await axios.get(url, {
-    httpsAgent,
-    httpAgent,
-    timeout: 7000,
-    headers: buildHumanHeaders({ "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate" }),
-    decompress: true,
-  });
-  if (typeof res.data !== "string") throw new Error("Non-string response from YouTube");
-  return res.data as string;
-}
-
-// ─── ytInitialData extractor ─────────────────────────────────────────────────
-
-function extractYtInitialData(html: string): any {
-  // Try both endings: `};` and `};\n`
-  const patterns = [
-    /var ytInitialData\s*=\s*({.+?});\s*<\/script>/s,
-    /var ytInitialData\s*=\s*({.+?});\s*(?:var|window)/s,
-  ];
-  for (const pattern of patterns) {
-    const m = html.match(pattern);
-    if (m) {
-      try { return JSON.parse(m[1]); } catch { /* continue */ }
-    }
-  }
-  return null;
-}
-
-// ─── Generic video item extractor (works for videos, shorts, live tabs) ──────
+const DEFAULT_CAZETV_CHANNEL_ID = "UCZiYbVptd3PVPf4f6eR6UaQ";
+const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 
 interface VideoItem {
   id: string;
   title: string;
   thumbnail: string;
   duration: string;
+  durationSeconds?: number;
   views: string;
   publishedAt: string;
   isLive?: boolean;
 }
 
-function extractVideoItems(data: any, limit = 20): VideoItem[] {
-  const results: VideoItem[] = [];
-  try {
-    const tabs: any[] = data?.contents?.twoColumnBrowseResultsRenderer?.tabs ?? [];
-    for (const tab of tabs) {
-      const contents =
-        tab?.tabRenderer?.content?.richGridRenderer?.contents ??
-        tab?.tabRenderer?.content?.sectionListRenderer?.contents ?? [];
-      for (const item of contents) {
-        const video =
-          item?.richItemRenderer?.content?.videoRenderer ??
-          item?.richItemRenderer?.content?.reelItemRenderer ??
-          item?.itemSectionRenderer?.contents?.[0]?.videoRenderer;
-        if (!video?.videoId) continue;
-        const title =
-          video?.title?.runs?.[0]?.text ??
-          video?.headline?.runs?.[0]?.text ?? "Untitled";
-        const thumb =
-          video?.thumbnail?.thumbnails?.slice(-1)[0]?.url ??
-          `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`;
-        const duration =
-          video?.lengthText?.simpleText ??
-          video?.thumbnailOverlays?.[0]?.thumbnailOverlayTimeStatusRenderer?.text?.simpleText ?? "";
-        const views =
-          video?.viewCountText?.simpleText ??
-          video?.shortViewCountText?.simpleText ?? "";
-        const published =
-          video?.publishedTimeText?.simpleText ?? "";
-        const isLive = !!video?.badges?.find?.((b: any) =>
-          b?.metadataBadgeRenderer?.label === "LIVE NOW"
-        );
-        results.push({ id: video.videoId, title, thumbnail: thumb, duration, views, publishedAt: published, isLive });
-        if (results.length >= limit) return results;
-      }
-    }
-  } catch (e) {
-    console.error("[Channel] Item extraction error:", e);
-  }
-  return results;
+interface PlaylistItem {
+  id: string;
+  title: string;
+  thumbnail: string;
+  videoCount: string;
+  description: string;
 }
 
-// ─── Fallback mock data ───────────────────────────────────────────────────────
+interface ChannelMetadata {
+  id: string;
+  title: string;
+  handle: string;
+  description: string;
+  avatar: string;
+  banner: string;
+  subscriberCount: string;
+  videoCount: string;
+  viewCount: string;
+  uploadsPlaylistId: string;
+}
 
-const MOCK_VIDEOS: VideoItem[] = [
-  { id: "WC2026_mock1", title: "Brasil x Argentina – Copa do Mundo 2026 | CazeTV", thumbnail: "https://i.ytimg.com/vi/WC2026_mock1/hqdefault.jpg", duration: "2:14:33", views: "4.2M views", publishedAt: "2 days ago" },
-  { id: "WC2026_mock2", title: "Copa do Mundo 2026: Cobertura completa | CazeTV", thumbnail: "https://i.ytimg.com/vi/WC2026_mock2/hqdefault.jpg", duration: "1:45:00", views: "2.8M views", publishedAt: "3 days ago" },
-  { id: "WC2026_mock3", title: "Melhores momentos Grupo A – Copa do Mundo 2026", thumbnail: "https://i.ytimg.com/vi/WC2026_mock3/hqdefault.jpg", duration: "45:21", views: "1.1M views", publishedAt: "5 days ago" },
-  { id: "WC2026_mock4", title: "França x Espanha | Copa do Mundo 2026 – AO VIVO", thumbnail: "https://i.ytimg.com/vi/WC2026_mock4/hqdefault.jpg", duration: "2:05:12", views: "3.5M views", publishedAt: "1 week ago" },
-  { id: "WC2026_mock5", title: "CazeTV | Abertura Copa do Mundo 2026 – Cerimônia", thumbnail: "https://i.ytimg.com/vi/WC2026_mock5/hqdefault.jpg", duration: "1:22:00", views: "5.7M views", publishedAt: "1 week ago" },
-  { id: "WC2026_mock6", title: "Análise técnica: Brasil nas oitavas de final | CazeTV", thumbnail: "https://i.ytimg.com/vi/WC2026_mock6/hqdefault.jpg", duration: "38:44", views: "980K views", publishedAt: "1 week ago" },
-];
+function getApiKey(): string {
+  return process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || "";
+}
 
-const MOCK_SHORTS: VideoItem[] = [
-  { id: "short_mock1", title: "⚽ Golaço do Vini Jr contra a Argentina! #Shorts", thumbnail: "https://i.ytimg.com/vi/short_mock1/hqdefault.jpg", duration: "0:58", views: "12M views", publishedAt: "1 day ago" },
-  { id: "short_mock2", title: "Defesa incrível do goleiro! Copa 2026 #CazeTV #Shorts", thumbnail: "https://i.ytimg.com/vi/short_mock2/hqdefault.jpg", duration: "0:45", views: "8.3M views", publishedAt: "2 days ago" },
-  { id: "short_mock3", title: "Reação da torcida brasileira no Maracanã 🇧🇷 #Shorts", thumbnail: "https://i.ytimg.com/vi/short_mock3/hqdefault.jpg", duration: "0:30", views: "6.1M views", publishedAt: "3 days ago" },
-  { id: "short_mock4", title: "Pênalti decisivo! Copa do Mundo 2026 #Shorts", thumbnail: "https://i.ytimg.com/vi/short_mock4/hqdefault.jpg", duration: "0:52", views: "4.9M views", publishedAt: "4 days ago" },
-];
+function getChannelId(): string {
+  return process.env.CAZETV_CHANNEL_ID || process.env.YOUTUBE_CHANNEL_ID || DEFAULT_CAZETV_CHANNEL_ID;
+}
 
-const MOCK_LIVE: VideoItem[] = [
-  { id: "live_mock1", title: "🔴 AO VIVO – Brasil x Alemanha | Copa do Mundo 2026 | CazeTV", thumbnail: "https://i.ytimg.com/vi/live_mock1/hqdefault.jpg", duration: "LIVE", views: "120K watching", publishedAt: "Started 2 hours ago", isLive: true },
-  { id: "live_mock2", title: "🔴 AO VIVO – Transmissão Copa do Mundo 2026 Dia 5 | CazeTV", thumbnail: "https://i.ytimg.com/vi/live_mock2/hqdefault.jpg", duration: "3:22:15", views: "890K views", publishedAt: "5 days ago" },
-  { id: "live_mock3", title: "🔴 Copa do Mundo 2026 – Fase de Grupos completa | CazeTV", thumbnail: "https://i.ytimg.com/vi/live_mock3/hqdefault.jpg", duration: "4:10:00", views: "2.1M views", publishedAt: "1 week ago" },
-  { id: "live_mock4", title: "Cerimônia de abertura Copa 2026 – Transmissão ao vivo", thumbnail: "https://i.ytimg.com/vi/live_mock4/hqdefault.jpg", duration: "1:55:30", views: "6.4M views", publishedAt: "1 week ago" },
-];
+function requireApiKey(): string {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error("Missing YOUTUBE_API_KEY or GOOGLE_API_KEY environment variable");
+  }
+  return apiKey;
+}
 
-const MOCK_PLAYLISTS = [
-  { id: "PL_mock1", title: "Copa do Mundo 2026 – Todos os jogos", thumbnail: "https://i.ytimg.com/vi/WC2026_mock1/hqdefault.jpg", videoCount: "104", description: "Transmissão completa de todos os 104 jogos da Copa do Mundo 2026" },
-  { id: "PL_mock2", title: "Melhores momentos – Copa 2026", thumbnail: "https://i.ytimg.com/vi/WC2026_mock3/hqdefault.jpg", videoCount: "48", description: "Gols, defesas e lances incríveis" },
-  { id: "PL_mock3", title: "Fase de Grupos – Copa 2026", thumbnail: "https://i.ytimg.com/vi/WC2026_mock5/hqdefault.jpg", videoCount: "48", description: "Todos os jogos da fase de grupos" },
-  { id: "PL_mock4", title: "Shorts da Copa 2026", thumbnail: "https://i.ytimg.com/vi/short_mock1/hqdefault.jpg", videoCount: "120", description: "Os melhores momentos em formato curto" },
-];
+async function youtubeGet<T>(path: string, params: Record<string, string | number | undefined>): Promise<T> {
+  const apiKey = requireApiKey();
+  const res = await axios.get<T>(`${YOUTUBE_API_BASE}/${path}`, {
+    timeout: 10000,
+    params: {
+      ...params,
+      key: apiKey,
+    },
+  });
+  return res.data;
+}
 
-// ─── Routes ──────────────────────────────────────────────────────────────────
+function bestThumbnail(thumbnails: any): string {
+  return (
+    thumbnails?.maxres?.url ||
+    thumbnails?.standard?.url ||
+    thumbnails?.high?.url ||
+    thumbnails?.medium?.url ||
+    thumbnails?.default?.url ||
+    ""
+  );
+}
 
-router.get("/videos", async (req, res) => {
+function formatCompactNumber(value: string | number | undefined): string {
+  const count = Number(value || 0);
+  if (!Number.isFinite(count)) return "0";
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: count >= 1_000_000 ? 1 : 0,
+  }).format(count);
+}
+
+function formatViews(value: string | number | undefined, isLive?: boolean): string {
+  const suffix = isLive ? " watching" : " views";
+  return `${formatCompactNumber(value)}${suffix}`;
+}
+
+function formatPublishedAt(value: string | undefined): string {
+  if (!value) return "";
+
+  const publishedAt = new Date(value);
+  const elapsedMs = Date.now() - publishedAt.getTime();
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return "";
+
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const week = 7 * day;
+  const month = 30 * day;
+  const year = 365 * day;
+
+  if (elapsedMs < hour) return `${Math.max(1, Math.floor(elapsedMs / minute))} minutes ago`;
+  if (elapsedMs < day) return `${Math.floor(elapsedMs / hour)} hours ago`;
+  if (elapsedMs < week) return `${Math.floor(elapsedMs / day)} days ago`;
+  if (elapsedMs < month) return `${Math.floor(elapsedMs / week)} weeks ago`;
+  if (elapsedMs < year) return `${Math.floor(elapsedMs / month)} months ago`;
+  return `${Math.floor(elapsedMs / year)} years ago`;
+}
+
+function parseIsoDuration(duration: string | undefined): number {
+  if (!duration) return 0;
+  const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!match) return 0;
+  const [, hours = "0", minutes = "0", seconds = "0"] = match;
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+}
+
+function formatDuration(duration: string | undefined, isLive?: boolean): string {
+  if (isLive) return "LIVE";
+  const totalSeconds = parseIsoDuration(duration);
+  if (!totalSeconds) return "";
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function sendApiError(res: any, source: string, err: any) {
+  const status = err.response?.status || 500;
+  const message = err.response?.data?.error?.message || err.message || "YouTube API request failed";
+  console.error(`[Channel] ${source} error:`, message);
+  return res.status(status).json({
+    success: false,
+    data: [],
+    error: message,
+  });
+}
+
+async function getChannelMetadata(): Promise<ChannelMetadata> {
+  const channelId = getChannelId();
+  const data = await youtubeGet<any>("channels", {
+    part: "snippet,statistics,contentDetails,brandingSettings",
+    id: channelId,
+  });
+
+  const channel = data.items?.[0];
+  if (!channel) {
+    throw new Error(`YouTube channel not found for id ${channelId}`);
+  }
+
+  return {
+    id: channel.id,
+    title: channel.snippet?.title || "CazéTV",
+    handle: channel.snippet?.customUrl || "@CazeTV",
+    description: channel.snippet?.description || "",
+    avatar: bestThumbnail(channel.snippet?.thumbnails),
+    banner: channel.brandingSettings?.image?.bannerExternalUrl || "",
+    subscriberCount: formatCompactNumber(channel.statistics?.subscriberCount),
+    videoCount: formatCompactNumber(channel.statistics?.videoCount),
+    viewCount: formatCompactNumber(channel.statistics?.viewCount),
+    uploadsPlaylistId: channel.contentDetails?.relatedPlaylists?.uploads || "",
+  };
+}
+
+async function fetchVideoDetails(videoIds: string[]): Promise<Map<string, any>> {
+  const details = new Map<string, any>();
+  const uniqueIds = Array.from(new Set(videoIds)).filter(Boolean);
+  if (uniqueIds.length === 0) return details;
+
+  const data = await youtubeGet<any>("videos", {
+    part: "snippet,contentDetails,statistics,liveStreamingDetails",
+    id: uniqueIds.join(","),
+  });
+
+  for (const item of data.items || []) {
+    details.set(item.id, item);
+  }
+
+  return details;
+}
+
+async function fetchUploads(maxResults: number): Promise<VideoItem[]> {
+  const channel = await getChannelMetadata();
+  if (!channel.uploadsPlaylistId) {
+    throw new Error("Channel uploads playlist is unavailable");
+  }
+
+  const data = await youtubeGet<any>("playlistItems", {
+    part: "snippet,contentDetails",
+    playlistId: channel.uploadsPlaylistId,
+    maxResults,
+  });
+
+  const videoIds = (data.items || [])
+    .map((item: any) => item.contentDetails?.videoId || item.snippet?.resourceId?.videoId)
+    .filter(Boolean);
+  const details = await fetchVideoDetails(videoIds);
+
+  return videoIds
+    .map((id: string) => toVideoItem(details.get(id), false))
+    .filter((item: VideoItem | null): item is VideoItem => Boolean(item));
+}
+
+function toVideoItem(video: any, forceLive: boolean): VideoItem | null {
+  if (!video?.id) return null;
+  const liveState = video.snippet?.liveBroadcastContent;
+  const isLive = forceLive || liveState === "live";
+  const durationSeconds = parseIsoDuration(video.contentDetails?.duration);
+  const viewers = isLive
+    ? video.liveStreamingDetails?.concurrentViewers || video.statistics?.viewCount
+    : video.statistics?.viewCount;
+
+  return {
+    id: video.id,
+    title: video.snippet?.title || "Untitled",
+    thumbnail: bestThumbnail(video.snippet?.thumbnails) || `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`,
+    duration: formatDuration(video.contentDetails?.duration, isLive),
+    durationSeconds,
+    views: formatViews(viewers, isLive),
+    publishedAt: isLive ? "Live now" : formatPublishedAt(video.snippet?.publishedAt),
+    isLive,
+  };
+}
+
+async function fetchLiveVideos(): Promise<VideoItem[]> {
+  const channelId = getChannelId();
+  const liveData = await youtubeGet<any>("search", {
+    part: "snippet",
+    channelId,
+    eventType: "live",
+    type: "video",
+    order: "date",
+    maxResults: 20,
+  });
+
+  let videoIds = (liveData.items || [])
+    .map((item: any) => item.id?.videoId)
+    .filter(Boolean);
+  let forceLive = true;
+
+  if (videoIds.length === 0) {
+    const completedData = await youtubeGet<any>("search", {
+      part: "snippet",
+      channelId,
+      eventType: "completed",
+      type: "video",
+      order: "date",
+      maxResults: 20,
+    });
+    videoIds = (completedData.items || [])
+      .map((item: any) => item.id?.videoId)
+      .filter(Boolean);
+    forceLive = false;
+  }
+
+  const details = await fetchVideoDetails(videoIds);
+  return videoIds
+    .map((id: string) => toVideoItem(details.get(id), forceLive))
+    .filter((item: VideoItem | null): item is VideoItem => Boolean(item));
+}
+
+async function fetchPlaylists(): Promise<PlaylistItem[]> {
+  const channelId = getChannelId();
+  const data = await youtubeGet<any>("playlists", {
+    part: "snippet,contentDetails",
+    channelId,
+    maxResults: 24,
+  });
+
+  return (data.items || []).map((playlist: any) => ({
+    id: playlist.id,
+    title: playlist.snippet?.title || "Playlist",
+    thumbnail: bestThumbnail(playlist.snippet?.thumbnails),
+    videoCount: String(playlist.contentDetails?.itemCount || 0),
+    description: playlist.snippet?.description || "",
+  }));
+}
+
+router.get("/", async (_req, res) => {
   try {
-    const html = await fetchChannelPage("/videos");
-    const data = extractYtInitialData(html);
-    const items = data ? extractVideoItems(data, 24) : [];
-    if (items.length > 0) {
-      return res.json({ success: true, data: items });
-    }
-    console.warn("[Channel] /videos scrape returned 0 items, using fallback");
-    return res.json({ success: false, data: MOCK_VIDEOS, fallback: true });
+    return res.json({ success: true, data: await getChannelMetadata() });
   } catch (err: any) {
-    console.error("[Channel] /videos error:", err.message);
-    return res.json({ success: false, data: MOCK_VIDEOS, fallback: true });
+    return sendApiError(res, "/", err);
   }
 });
 
-router.get("/shorts", async (req, res) => {
+router.get("/metadata", async (_req, res) => {
   try {
-    const html = await fetchChannelPage("/shorts");
-    const data = extractYtInitialData(html);
-    const items = data ? extractVideoItems(data, 20) : [];
-    if (items.length > 0) {
-      return res.json({ success: true, data: items });
-    }
-    console.warn("[Channel] /shorts scrape returned 0 items, using fallback");
-    return res.json({ success: false, data: MOCK_SHORTS, fallback: true });
+    return res.json({ success: true, data: await getChannelMetadata() });
   } catch (err: any) {
-    console.error("[Channel] /shorts error:", err.message);
-    return res.json({ success: false, data: MOCK_SHORTS, fallback: true });
+    return sendApiError(res, "/metadata", err);
   }
 });
 
-router.get("/live", async (req, res) => {
+router.get("/info", async (_req, res) => {
   try {
-    const html = await fetchChannelPage("/streams");
-    const data = extractYtInitialData(html);
-    const items = data ? extractVideoItems(data, 20) : [];
-    if (items.length > 0) {
-      return res.json({ success: true, data: items });
-    }
-    console.warn("[Channel] /live scrape returned 0 items, using fallback");
-    return res.json({ success: false, data: MOCK_LIVE, fallback: true });
+    const metadata = await getChannelMetadata();
+    return res.json({
+      success: true,
+      data: {
+        title: metadata.title,
+        customUrl: metadata.handle,
+        thumbnail: metadata.avatar,
+        subscriberCount: metadata.subscriberCount,
+        videoCount: metadata.videoCount,
+      },
+    });
   } catch (err: any) {
-    console.error("[Channel] /live error:", err.message);
-    return res.json({ success: false, data: MOCK_LIVE, fallback: true });
+    return sendApiError(res, "/info", err);
   }
 });
 
-router.get("/playlists", async (req, res) => {
+router.get("/videos", async (_req, res) => {
   try {
-    const html = await fetchChannelPage("/playlists");
-    const data = extractYtInitialData(html);
-    const playlists: any[] = [];
-    if (data) {
-      const tabs = data?.contents?.twoColumnBrowseResultsRenderer?.tabs ?? [];
-      for (const tab of tabs) {
-        const items = tab?.tabRenderer?.content?.gridRenderer?.items ??
-          tab?.tabRenderer?.content?.sectionListRenderer?.contents ?? [];
-        for (const item of items) {
-          const pl = item?.gridPlaylistRenderer ?? item?.lockupViewModel;
-          if (!pl) continue;
-          const id = pl?.playlistId ?? pl?.contentId ?? "";
-          const title = pl?.title?.runs?.[0]?.text ?? pl?.metadata?.lockupMetadataViewModel?.title?.content ?? "Playlist";
-          const thumb = pl?.thumbnail?.thumbnails?.slice(-1)[0]?.url ?? "";
-          const count = pl?.videoCountText?.runs?.[0]?.text ?? "0";
-          playlists.push({ id, title, thumbnail: thumb, videoCount: count, description: "" });
-          if (playlists.length >= 12) break;
-        }
-      }
-    }
-    if (playlists.length > 0) {
-      return res.json({ success: true, data: playlists });
-    }
-    return res.json({ success: false, data: MOCK_PLAYLISTS, fallback: true });
+    const items = (await fetchUploads(24)).filter((item) => (item.durationSeconds || 0) > 60);
+    return res.json({ success: true, data: items });
   } catch (err: any) {
-    console.error("[Channel] /playlists error:", err.message);
-    return res.json({ success: false, data: MOCK_PLAYLISTS, fallback: true });
+    return sendApiError(res, "/videos", err);
+  }
+});
+
+router.get("/shorts", async (_req, res) => {
+  try {
+    const items = (await fetchUploads(50)).filter((item) => {
+      const seconds = item.durationSeconds || 0;
+      return seconds > 0 && seconds <= 60;
+    }).slice(0, 24);
+    return res.json({ success: true, data: items });
+  } catch (err: any) {
+    return sendApiError(res, "/shorts", err);
+  }
+});
+
+router.get("/live", async (_req, res) => {
+  try {
+    return res.json({ success: true, data: await fetchLiveVideos() });
+  } catch (err: any) {
+    return sendApiError(res, "/live", err);
+  }
+});
+
+router.get("/playlists", async (_req, res) => {
+  try {
+    return res.json({ success: true, data: await fetchPlaylists() });
+  } catch (err: any) {
+    return sendApiError(res, "/playlists", err);
   }
 });
 

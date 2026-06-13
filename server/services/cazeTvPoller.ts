@@ -6,16 +6,8 @@ import { eq } from "drizzle-orm";
 let currentLiveVideoId: string | null = null;
 let pollingInterval: NodeJS.Timeout | null = null;
 
-import { getProxyAgents } from "./proxyService";
-
-let pollerAxios = axios.create({
-  timeout: 15000,
-  headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-  }
-});
+// Official CazeTV channel ID; override from Vercel env if needed.
+const CAZETV_CHANNEL_ID = process.env.CAZETV_CHANNEL_ID || process.env.YOUTUBE_CHANNEL_ID || "UCZiYbVptd3PVPf4f6eR6UaQ";
 
 /**
  * Strategy A: Fetch via YouTube Data API v3 if key is present
@@ -39,61 +31,110 @@ async function fetchLiveIdFromApi(apiKey: string, channelId: string): Promise<st
 }
 
 /**
- * Strategy B: Scrape /live page (fallback)
+ * Fetch Channel Metadata (Stats & Snippet) via YouTube Data API v3
  */
-async function fetchLiveIdFromScraping(channelUrl: string): Promise<string | null> {
+export async function fetchChannelMetadata(apiKey: string, channelId: string = CAZETV_CHANNEL_ID) {
   try {
-    console.log(`[Poller] Scraping live page at ${channelUrl}...`);
-    const { httpsAgent, httpAgent } = await getProxyAgents();
-    const res = await pollerAxios.get(channelUrl, {
-      httpsAgent,
-      httpAgent,
-    });
-    const html = res.data;
-    if (typeof html !== "string") {
-      throw new Error("Invalid response format received from YouTube live page");
-    }
+    const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&id=${channelId}&key=${apiKey}`;
+    const res = await axios.get(url, { timeout: 10000 });
+    const item = res.data?.items?.[0];
 
-    // Look for videoId inside ytInitialPlayerResponse or script payloads
-    const matches = [
-      html.match(/"liveStreamRenderer":\s*{\s*"videoId":\s*"([^"]+)"/),
-      html.match(/"videoId"\s*:\s*"([^"]+)"/),
-      html.match(/href="https:\/\/www\.youtube\.com\/watch\?v=([^"]+)"/),
-      html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([^"]+)"/)
-    ];
+    if (!item) return null;
 
-    for (const match of matches) {
-      if (match && match[1]) {
-        // Simple sanity check for a 11-char YouTube ID
-        if (/^[a-zA-Z0-9_-]{11}$/.test(match[1])) {
-          console.log(`[Poller] Live ID scraped successfully: ${match[1]}`);
-          return match[1];
-        }
-      }
-    }
+    return {
+      title: item.snippet.title,
+      customUrl: item.snippet.customUrl,
+      thumbnail: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.default?.url,
+      subscriberCount: formatYouTubeNumber(item.statistics.subscriberCount),
+      videoCount: formatYouTubeNumber(item.statistics.videoCount),
+      uploadsPlaylistId: item.contentDetails?.relatedPlaylists?.uploads
+    };
   } catch (err: any) {
-    console.error(`[Poller] Scraping fallback failed: ${err.message}`);
+    console.error(`[YouTube API] Failed to fetch channel metadata: ${err.message}`);
+    return null;
   }
-  return null;
+}
+
+/**
+ * Fetch Channel Content (Videos, Shorts, Playlists) via YouTube Data API v3
+ */
+export async function fetchChannelContent(apiKey: string, type: string, channelId: string = CAZETV_CHANNEL_ID) {
+  try {
+    let url = "";
+    // For standard videos, use the uploads playlist to save quota (1 unit vs 100 for search)
+    if (type === "videos") {
+      const meta = await fetchChannelMetadata(apiKey, channelId);
+      if (!meta?.uploadsPlaylistId) throw new Error("No uploads playlist found");
+      url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${meta.uploadsPlaylistId}&maxResults=20&key=${apiKey}`;
+    } else if (type === "live") {
+      url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&type=video&eventType=completed&order=date&maxResults=20&key=${apiKey}`;
+    } else if (type === "shorts") {
+      url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&type=video&videoDuration=short&maxResults=20&key=${apiKey}`;
+    } else if (type === "playlists") {
+      url = `https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&channelId=${channelId}&maxResults=10&key=${apiKey}`;
+    }
+
+    if (!url) return [];
+
+    const res = await axios.get(url, { timeout: 10000 });
+    const items = res.data?.items || [];
+
+    return items.map((item: any) => {
+      const snippet = item.snippet;
+      const videoId = type === "videos" ? item.contentDetails?.videoId : (item.id?.videoId || item.id);
+      return {
+        id: videoId,
+        title: snippet.title,
+        thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url,
+        duration: "", // Optional: requires extra API call to 'videos' endpoint
+        views: "Authentic View Count",
+        publishedAt: formatRelativeDate(snippet.publishedAt)
+      };
+    });
+  } catch (err: any) {
+    console.error(`[YouTube API] Failed to fetch channel ${type}: ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * Helper: Format large numbers (e.g. 15200000 -> 15.2M)
+ */
+function formatYouTubeNumber(numStr: string): string {
+  const num = parseInt(numStr, 10);
+  if (isNaN(num)) return numStr;
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
+  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
+  return num.toString();
+}
+
+/**
+ * Helper: Format date to relative string
+ */
+function formatRelativeDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+  return `${Math.floor(diffDays / 365)} years ago`;
 }
 
 /**
  * Runs the polling task
  */
 export async function pollCazeTvLive() {
-  const channelId = "UCy1Ms2KSGF3eDYYo7dOBkJg"; // CazeTV Channel ID
-  const channelLiveUrl = "https://www.youtube.com/@CazeTV/live";
-  const apiKey = process.env.YOUTUBE_API_KEY;
+  const apiKey = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY;
 
   let liveId: string | null = null;
 
   if (apiKey) {
-    liveId = await fetchLiveIdFromApi(apiKey, channelId);
-  }
-
-  // Fallback to scraping
-  if (!liveId) {
-    liveId = await fetchLiveIdFromScraping(channelLiveUrl);
+    liveId = await fetchLiveIdFromApi(apiKey, CAZETV_CHANNEL_ID);
   }
 
   if (liveId !== currentLiveVideoId) {
@@ -127,7 +168,7 @@ export function startLiveIdPoller(intervalMs = 90000) {
   }
 
   console.log(`[Poller] Starting automated CazeTV Live ID Polling (every ${intervalMs / 1000}s)`);
-  
+
   // Initial run
   pollCazeTvLive().catch(console.error);
 

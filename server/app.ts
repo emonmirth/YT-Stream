@@ -19,7 +19,7 @@ registerOAuthRoutes(app);
 // Proxy routes for Brazilian residential proxy streaming
 app.use("/api/proxy", proxyRoutes);
 
-// CazeTV Channel scraping routes
+// CazeTV Channel routes backed by the official YouTube Data API
 app.use("/api/channel", channelRoutes);
 
 // tRPC API

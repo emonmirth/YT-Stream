@@ -9,6 +9,13 @@ export default function Channel() {
     const [activeTab, setActiveTab] = useState("videos");
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [channelInfo, setChannelInfo] = useState<{
+        title: string;
+        customUrl: string;
+        thumbnail: string;
+        subscriberCount: string;
+        videoCount: string;
+    } | null>(null);
     const [, setLocation] = useLocation();
 
     const tabs = [
@@ -17,6 +24,19 @@ export default function Channel() {
         { id: "live", label: "Live" },
         { id: "playlists", label: "Playlists" },
     ];
+
+    useEffect(() => {
+        const fetchChannelInfo = async () => {
+            try {
+                const response = await fetch("/api/channel/info");
+                const json = await response.json();
+                if (json.success) setChannelInfo(json.data);
+            } catch (error) {
+                console.error("Failed to fetch channel info:", error);
+            }
+        };
+        fetchChannelInfo();
+    }, []);
 
     useEffect(() => {
         const fetchTabContent = async () => {
@@ -55,19 +75,19 @@ export default function Channel() {
                         <div className="flex flex-col md:flex-row md:items-center gap-6 w-full">
                             <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-background bg-card overflow-hidden shadow-xl">
                                 <img
-                                    src="https://yt3.googleusercontent.com/oc90Z6G7Sg1WlX18mYVAnT_pL8k5v7pY4H9xXJ0Sg2YhZ7L7gJ9V8z1v0Y7g8Y9xXJ0Sg2YhZ7L=s176-c-k-c0x00ffffff-no-rj"
+                                    src={channelInfo?.thumbnail || "https://yt3.googleusercontent.com/oc90Z6G7Sg1WlX18mYVAnT_pL8k5v7pY4H9xXJ0Sg2YhZ7L7gJ9V8z1v0Y7g8Y9xXJ0Sg2YhZ7L=s176-c-k-c0x00ffffff-no-rj"}
                                     alt="CazeTV"
                                     className="w-full h-full object-cover"
                                 />
                             </div>
                             <div className="flex-1">
-                                <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">CazéTV</h1>
+                                <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">{channelInfo?.title || "CazéTV"}</h1>
                                 <div className="flex items-center gap-3 text-sm text-muted-foreground mb-4">
-                                    <span>@CazeTV</span>
+                                    <span>{channelInfo?.customUrl || "@CazeTV"}</span>
                                     <span>•</span>
-                                    <span>15.2M subscribers</span>
+                                    <span>{channelInfo?.subscriberCount || "29M+"} subscribers</span>
                                     <span>•</span>
-                                    <span>4.2K videos</span>
+                                    <span>{channelInfo?.videoCount || "4.2K"} videos</span>
                                 </div>
                                 <button
                                     onClick={handleWatchLive}
