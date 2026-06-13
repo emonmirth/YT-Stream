@@ -1,27 +1,12 @@
 import { Router } from "express";
 import axios from "axios";
-import { HttpsProxyAgent } from "https-proxy-agent";
-import { HttpProxyAgent } from "http-proxy-agent";
 import { getCachedLiveVideoId } from "../services/cazeTvPoller";
+import { getProxyAgents } from "../services/proxyService";
 
 const router = Router();
 
-const proxyUrl = process.env.BRAZIL_PROXY_URL;
-let httpsAgent: HttpsProxyAgent<string> | undefined;
-let httpAgent: HttpProxyAgent<string> | undefined;
-
-if (proxyUrl) {
-  console.log(`[Proxy] Initializing Brazilian proxy agents using URL: ${proxyUrl}`);
-  httpsAgent = new HttpsProxyAgent(proxyUrl);
-  httpAgent = new HttpProxyAgent(proxyUrl);
-} else {
-  console.warn("[Proxy] WARNING: BRAZIL_PROXY_URL is not set. Requests will be direct.");
-}
-
-// Custom Axios instance optimized for streaming with timeouts
+// Custom Axios instance optimized for streaming with timeouts (agents injected dynamically)
 const proxyAxios = axios.create({
-  httpsAgent,
-  httpAgent,
   timeout: 15000, // Reduced manifest fetch timeout
   headers: {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -33,7 +18,13 @@ const proxyAxios = axios.create({
 // Helper for Exponential Backoff Retry mechanism
 async function fetchWithRetry(url: string, options: any = {}, retries = 3, delayMs = 500): Promise<any> {
   try {
-    return await proxyAxios.get(url, options);
+    const { httpsAgent, httpAgent } = await getProxyAgents();
+    const mergedOptions = {
+      ...options,
+      httpsAgent,
+      httpAgent,
+    };
+    return await proxyAxios.get(url, mergedOptions);
   } catch (error: any) {
     const status = error.response?.status;
     // Retry on timeouts, connection failures, or transient 5xx server errors
@@ -253,10 +244,13 @@ router.get("/segment", async (req, res) => {
   }
 
   try {
+    const { httpsAgent, httpAgent } = await getProxyAgents();
     // Media segments might use a separate axios config with slightly larger timeout
     const response = await proxyAxios.get(url, {
       responseType: "stream",
       timeout: 20000, // 20s timeout limit for full segments
+      httpsAgent,
+      httpAgent,
       headers: {
         "Origin": "https://www.youtube.com",
         "Referer": "https://www.youtube.com/",

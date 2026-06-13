@@ -2,33 +2,15 @@ import { publicProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import axios, { AxiosError } from "axios";
 
-/**
- * Brazilian Proxy Configuration
- * In production, replace with actual residential proxy credentials
- */
-const PROXY_CONFIG = {
-  // Example: Using a Brazilian residential proxy service
-  // In production, use environment variables for credentials
-  protocol: process.env.PROXY_PROTOCOL || "http",
-  host: process.env.PROXY_HOST || "proxy.example.com",
-  port: parseInt(process.env.PROXY_PORT || "8080"),
-  auth: {
-    username: process.env.PROXY_USERNAME || "user",
-    password: process.env.PROXY_PASSWORD || "pass",
-  },
-};
+import { getProxyAgents } from "../services/proxyService";
 
 /**
  * Create axios instance with Brazilian proxy configuration
  */
-function createProxyAxios() {
+function createProxyAxios(httpAgent: any, httpsAgent: any) {
   return axios.create({
-    httpAgent: new (require("http").Agent)({
-      proxy: `${PROXY_CONFIG.protocol}://${PROXY_CONFIG.auth.username}:${PROXY_CONFIG.auth.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`,
-    }),
-    httpsAgent: new (require("https").Agent)({
-      proxy: `${PROXY_CONFIG.protocol}://${PROXY_CONFIG.auth.username}:${PROXY_CONFIG.auth.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`,
-    }),
+    httpAgent,
+    httpsAgent,
     timeout: 30000,
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -60,7 +42,8 @@ export const proxyRouter = router({
     }))
     .query(async ({ input }) => {
       try {
-        const proxyAxios = createProxyAxios();
+        const { httpAgent, httpsAgent } = await getProxyAgents();
+        const proxyAxios = createProxyAxios(httpAgent, httpsAgent);
         const url = `https://www.youtube.com/watch?v=${input.videoId}`;
 
         const response = await proxyAxios.get(url, {
@@ -97,7 +80,8 @@ export const proxyRouter = router({
     }))
     .query(async ({ input }) => {
       try {
-        const proxyAxios = createProxyAxios();
+        const { httpAgent, httpsAgent } = await getProxyAgents();
+        const proxyAxios = createProxyAxios(httpAgent, httpsAgent);
 
         const response = await proxyAxios.get(input.manifestUrl, {
           headers: {
@@ -132,7 +116,8 @@ export const proxyRouter = router({
     }))
     .query(async ({ input }) => {
       try {
-        const proxyAxios = createProxyAxios();
+        const { httpAgent, httpsAgent } = await getProxyAgents();
+        const proxyAxios = createProxyAxios(httpAgent, httpsAgent);
 
         const response = await proxyAxios.get(input.segmentUrl, {
           headers: {
@@ -170,7 +155,8 @@ export const proxyRouter = router({
     }))
     .query(async ({ input }) => {
       try {
-        const proxyAxios = createProxyAxios();
+        const { httpAgent, httpsAgent } = await getProxyAgents();
+        const proxyAxios = createProxyAxios(httpAgent, httpsAgent);
 
         const response = await proxyAxios.request({
           method: input.method as "GET" | "POST",
@@ -203,7 +189,8 @@ export const proxyRouter = router({
    */
   healthCheck: publicProcedure.query(async () => {
     try {
-      const proxyAxios = createProxyAxios();
+      const { httpAgent, httpsAgent } = await getProxyAgents();
+      const proxyAxios = createProxyAxios(httpAgent, httpsAgent);
 
       // Test proxy by fetching a small resource
       const response = await proxyAxios.get("https://www.youtube.com", {

@@ -6,8 +6,8 @@ import { eq } from "drizzle-orm";
 let currentLiveVideoId: string | null = null;
 let pollingInterval: NodeJS.Timeout | null = null;
 
-// Extracted from proxyRoutes.ts settings:
-const proxyUrl = process.env.BRAZIL_PROXY_URL;
+import { getProxyAgents } from "./proxyService";
+
 let pollerAxios = axios.create({
   timeout: 15000,
   headers: {
@@ -16,15 +16,6 @@ let pollerAxios = axios.create({
     "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
   }
 });
-
-import { HttpsProxyAgent } from "https-proxy-agent";
-import { HttpProxyAgent } from "http-proxy-agent";
-
-// Configure proxy agent if available
-if (proxyUrl) {
-  pollerAxios.defaults.httpsAgent = new HttpsProxyAgent(proxyUrl);
-  pollerAxios.defaults.httpAgent = new HttpProxyAgent(proxyUrl);
-}
 
 /**
  * Strategy A: Fetch via YouTube Data API v3 if key is present
@@ -53,7 +44,11 @@ async function fetchLiveIdFromApi(apiKey: string, channelId: string): Promise<st
 async function fetchLiveIdFromScraping(channelUrl: string): Promise<string | null> {
   try {
     console.log(`[Poller] Scraping live page at ${channelUrl}...`);
-    const res = await pollerAxios.get(channelUrl);
+    const { httpsAgent, httpAgent } = await getProxyAgents();
+    const res = await pollerAxios.get(channelUrl, {
+      httpsAgent,
+      httpAgent,
+    });
     const html = res.data;
 
     // Look for videoId inside ytInitialPlayerResponse or script payloads
