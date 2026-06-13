@@ -50,6 +50,9 @@ async function fetchLiveIdFromScraping(channelUrl: string): Promise<string | nul
       httpAgent,
     });
     const html = res.data;
+    if (typeof html !== "string") {
+      throw new Error("Invalid response format received from YouTube live page");
+    }
 
     // Look for videoId inside ytInitialPlayerResponse or script payloads
     const matches = [

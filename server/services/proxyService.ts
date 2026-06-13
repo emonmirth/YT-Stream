@@ -15,7 +15,7 @@ export async function getDynamicBrazilProxy(): Promise<string> {
   const url = "https://proxylist.geonode.com/api/proxy-list?country=BR&protocols=http&limit=5&page=1&sort_by=lastChecked&sort_type=desc";
   try {
     console.log(`[Proxy Scraper] Scraping dynamic Brazil proxy from: ${url}`);
-    const res = await axios.get(url, { timeout: 8000 });
+    const res = await axios.get(url, { timeout: 3000 });
     const data = res.data?.data;
     if (Array.isArray(data) && data.length > 0) {
       const proxy = data[0];

@@ -90,6 +90,9 @@ router.get("/stream", async (req, res) => {
     });
 
     const html = response.data;
+    if (typeof html !== "string") {
+      throw new Error("Invalid response format received from YouTube watch page");
+    }
     
     // Attempt 1: Fast regex for direct HLS manifest URL matching
     const hlsMatch = html.match(/"hlsManifestUrl"\s*:\s*"([^"]+)"/);

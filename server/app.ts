@@ -27,4 +27,16 @@ app.use(
   })
 );
 
+// Global error handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error("[Global Error Handler]", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.status || 500).json({
+    error: true,
+    message: err.message || "An unexpected error occurred",
+  });
+});
+
 export { app };
