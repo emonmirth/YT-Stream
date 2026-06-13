@@ -5,6 +5,7 @@ import { registerStorageProxy } from "./_core/storageProxy";
 import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
 import proxyRoutes from "./routes/proxyRoutes";
+import channelRoutes from "./routes/channelRoutes";
 
 const app = express();
 
@@ -17,6 +18,9 @@ registerOAuthRoutes(app);
 
 // Proxy routes for Brazilian residential proxy streaming
 app.use("/api/proxy", proxyRoutes);
+
+// CazeTV Channel scraping routes
+app.use("/api/channel", channelRoutes);
 
 // tRPC API
 app.use(

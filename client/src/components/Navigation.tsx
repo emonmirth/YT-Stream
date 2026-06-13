@@ -7,7 +7,7 @@ export default function Navigation() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { label: "Home", path: "/" },
+    { label: "Channel", path: "/channel" },
     { label: "Live Now", path: "/live" },
     { label: "Schedule", path: "/schedule" },
     { label: "Troubleshooting Guide", path: "/troubleshooting" },
@@ -34,11 +34,10 @@ export default function Navigation() {
           {navItems.map((item) => (
             <Link key={item.path} href={item.path}>
               <div
-                className={`nav-link cursor-pointer ${
-                  isActive(item.path)
+                className={`nav-link cursor-pointer ${isActive(item.path)
                     ? "text-accent border-b-2 border-accent pb-1"
                     : "text-foreground hover:text-accent"
-                }`}
+                  }`}
               >
                 {item.label}
               </div>
@@ -67,11 +66,10 @@ export default function Navigation() {
             {navItems.map((item) => (
               <Link key={item.path} href={item.path}>
                 <div
-                  className={`nav-link block py-2 cursor-pointer ${
-                    isActive(item.path)
+                  className={`nav-link block py-2 cursor-pointer ${isActive(item.path)
                       ? "text-accent border-l-2 border-accent pl-2"
                       : "text-foreground hover:text-accent"
-                  }`}
+                    }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   {item.label}

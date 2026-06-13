@@ -9,12 +9,14 @@ import Live from "./pages/Live";
 import Schedule from "./pages/Schedule";
 import Troubleshooting from "./pages/Troubleshooting";
 import Legal from "./pages/Legal";
+import Channel from "./pages/Channel";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
+      <Route path={"/"} component={Channel} />
+      <Route path={"/channel"} component={Channel} />
       <Route path={"/live"} component={Live} />
       <Route path={"/schedule"} component={Schedule} />
       <Route path={"/troubleshooting"} component={Troubleshooting} />

@@ -16,14 +16,57 @@ function safeSetHeader(res: any, name: string, value: any, fallback?: string) {
   }
 }
 
-// Custom Axios instance optimized for streaming with timeouts (agents injected dynamically)
+// Rotating real-browser User-Agent pool (desktop Chrome/Firefox + mobile)
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+];
+
+function randomUA(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+/** Builds a realistic human browser header set for a Brazilian user. */
+export function buildHumanHeaders(extra?: Record<string, string>): Record<string, string> {
+  const ua = randomUA();
+  const isChrome = ua.includes("Chrome");
+  return {
+    "User-Agent": ua,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "DNT": "1",
+    "Cache-Control": "max-age=0",
+    "Referer": "https://www.youtube.com/",
+    "Origin": "https://www.youtube.com",
+    // Simulate Chrome's sec-fetch headers to look like a real navigation
+    ...(isChrome ? {
+      "sec-ch-ua": `"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"`,
+      "sec-ch-ua-mobile": ua.includes("Mobile") ? "?1" : "?0",
+      "sec-ch-ua-platform": ua.includes("Windows") ? `"Windows"` : ua.includes("Mac") ? `"macOS"` : `"Linux"`,
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "none",
+      "Sec-Fetch-User": "?1",
+    } : {}),
+    // YouTube CONSENT cookie to bypass age/region dialogs
+    "Cookie": "CONSENT=YES+yt.432984.en+FX+035; GPS=1; YSC=fakeid123; VISITOR_INFO1_LIVE=fakevisitor;",
+    ...extra,
+  };
+}
+
+// Custom Axios instance optimized for streaming
 const proxyAxios = axios.create({
-  timeout: 15000, // Reduced manifest fetch timeout
-  headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-  }
+  timeout: 15000,
+  headers: buildHumanHeaders(),
 });
 
 // Helper for Exponential Backoff Retry mechanism

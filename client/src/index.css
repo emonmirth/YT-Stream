@@ -54,7 +54,7 @@
   --chart-4: #FFB399;
   --chart-5: #FFC7B3;
   --radius: 0.5rem;
-  
+
   /* Pitch-black background (#0D0D0D = oklch(0.05 0 0)) */
   --background: oklch(0.05 0 0);
   --foreground: oklch(0.95 0.01 0);
@@ -121,42 +121,54 @@
   * {
     @apply border-border outline-ring/50;
   }
-  
+
   html {
     color-scheme: dark;
   }
-  
+
   body {
     @apply bg-background text-foreground;
     background-color: #0D0D0D;
   }
-  
+
   /* Premium typography */
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: 'Clash Display', sans-serif;
     font-weight: 700;
     letter-spacing: -0.02em;
   }
-  
+
   h1 {
     font-size: 3.5rem;
     line-height: 1.1;
   }
-  
+
   h2 {
     font-size: 2.5rem;
     line-height: 1.2;
   }
-  
+
   h3 {
     font-size: 1.875rem;
     line-height: 1.3;
   }
-  
-  body, p, span, a, button, input, textarea, select {
+
+  body,
+  p,
+  span,
+  a,
+  button,
+  input,
+  textarea,
+  select {
     font-family: 'Space Grotesk', sans-serif;
   }
-  
+
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
   [type="button"]:not(:disabled),
@@ -171,6 +183,7 @@
 }
 
 @layer components {
+
   /* Custom container utility */
   .container {
     width: 100%;
@@ -199,7 +212,7 @@
       max-width: 1280px;
     }
   }
-  
+
   /* Premium button styles */
   .btn-premium {
     @apply px-6 py-3 bg-accent text-accent-foreground font-semibold rounded-sm;
@@ -208,14 +221,14 @@
     font-family: 'Space Grotesk', sans-serif;
     letter-spacing: 0.05em;
   }
-  
+
   /* Premium card styles */
   .card-premium {
     @apply bg-card text-card-foreground p-6 rounded-sm;
     border: 1px solid oklch(0.15 0.001 0);
     backdrop-filter: blur(10px);
   }
-  
+
   /* Hero section styles */
   .hero-section {
     @apply min-h-screen flex items-center justify-center;
@@ -223,7 +236,7 @@
     position: relative;
     overflow: hidden;
   }
-  
+
   .hero-section::before {
     content: '';
     position: absolute;
@@ -234,7 +247,7 @@
     background: radial-gradient(circle at 20% 50%, rgba(255, 107, 53, 0.1) 0%, transparent 50%);
     pointer-events: none;
   }
-  
+
   /* Navigation styles */
   .nav-link {
     @apply text-foreground font-medium transition-colors duration-200;
@@ -243,11 +256,11 @@
     text-transform: uppercase;
     font-size: 0.875rem;
   }
-  
+
   .nav-link:hover {
     @apply text-accent;
   }
-  
+
   .nav-link.active {
     @apply text-accent border-b-2 border-accent pb-1;
   }
@@ -272,4 +285,43 @@
 
 .premium-glow {
   box-shadow: 0 0 30px rgba(255, 107, 53, 0.2);
+}
+
+/* Video Card Styles */
+.video-card {
+  @apply flex flex-col gap-3 group cursor-pointer;
+}
+
+.video-card-thumb {
+  @apply relative aspect-video rounded-sm overflow-hidden bg-muted;
+}
+
+.video-card-duration {
+  @apply absolute bottom-2 right-2 px-1 py-0.5 bg-black/80 text-[10px] font-bold text-white rounded-xs;
+}
+
+.video-card-overlay {
+  @apply absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity;
+}
+
+/* Channel Tab Navigation */
+.channel-tab {
+  @apply px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors relative cursor-pointer uppercase tracking-wider;
+}
+
+.tab-active {
+  @apply text-foreground font-bold;
+}
+
+.tab-indicator {
+  @apply absolute bottom-0 left-0 right-0 h-1 bg-accent;
+}
+
+/* Live Badge */
+.live-badge {
+  @apply bg-red-600 text-white px-1.5 py-0.5 rounded-xs text-[10px] font-bold flex items-center gap-1 uppercase;
+}
+
+.live-pulse {
+  @apply w-1.5 h-1.5 bg-white rounded-full animate-pulse;
 }
