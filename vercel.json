@@ -4,14 +4,13 @@
   "outputDirectory": "dist/public",
   "framework": null,
   "functions": {
-    "dist/index.js": {
+    "api/index.ts": {
       "maxDuration": 60,
       "memory": 1024
     }
   },
   "rewrites": [
-    { "source": "/api/proxy/:path*", "destination": "/api/proxy/:path*" },
-    { "source": "/api/trpc/:path*", "destination": "/api/trpc/:path*" },
+    { "source": "/api/:path*", "destination": "/api" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
