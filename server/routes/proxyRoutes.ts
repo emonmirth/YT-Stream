@@ -5,6 +5,17 @@ import { getProxyAgents } from "../services/proxyService";
 
 const router = Router();
 
+// Helper to safely set response headers in Express from Axios header values
+function safeSetHeader(res: any, name: string, value: any, fallback?: string) {
+  if (typeof value === "string" || typeof value === "number") {
+    res.setHeader(name, value);
+  } else if (Array.isArray(value)) {
+    res.setHeader(name, value.map(String));
+  } else if (fallback !== undefined) {
+    res.setHeader(name, fallback);
+  }
+}
+
 // Custom Axios instance optimized for streaming with timeouts (agents injected dynamically)
 const proxyAxios = axios.create({
   timeout: 15000, // Reduced manifest fetch timeout
@@ -222,7 +233,7 @@ router.get("/manifest", async (req, res) => {
 
     const rewrittenContent = rewriteManifest(response.data, url);
 
-    res.setHeader("Content-Type", response.headers["content-type"] || "application/vnd.apple.mpegurl");
+    safeSetHeader(res, "Content-Type", response.headers["content-type"], "application/vnd.apple.mpegurl");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     return res.status(200).send(rewrittenContent);
   } catch (error: any) {
@@ -260,9 +271,9 @@ router.get("/segment", async (req, res) => {
       }
     });
 
-    res.setHeader("Content-Type", response.headers["content-type"] || "video/mp2t");
+    safeSetHeader(res, "Content-Type", response.headers["content-type"], "video/mp2t");
     if (response.headers["content-length"]) {
-      res.setHeader("Content-Length", response.headers["content-length"]);
+      safeSetHeader(res, "Content-Length", response.headers["content-length"]);
     }
     
     // Pipe the proxy stream directly to the Express client response
@@ -360,7 +371,7 @@ router.get("/stream-url", async (req, res) => {
 
     const rewrittenContent = rewriteManifest(manifestResponse.data, streamUrl);
 
-    res.setHeader("Content-Type", manifestResponse.headers["content-type"] || "application/vnd.apple.mpegurl");
+    safeSetHeader(res, "Content-Type", manifestResponse.headers["content-type"], "application/vnd.apple.mpegurl");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     return res.status(200).send(rewrittenContent);
 
